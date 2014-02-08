@@ -31,7 +31,7 @@ import subprocess
 
 
 def sha1(filename):
-    p = subprocess.Popen(["shasum", filename],
+    p = subprocess.Popen(["sha1sum", filename],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     o, e = p.communicate()
     return o[0:37]
@@ -59,34 +59,37 @@ class State(object):
         self.dirpath = dirpath
         self.directories += 1
 
+    def update(self):
+        self.now = time.time()
+        self.increment = self.now - self.last
+        self.last = self.now
+        self.elapsed = self.now - self.start
+        print >>sys.stderr, self
+
     def check(self, filename):
-            self.target = os.path.join(self.dirpath, filename)
-            self.stats = os.lstat(self.target)
-            self.links = self.stats.st_nlink
-            self.size = self.stats.st_size
-            self.total += self.size
-            self.files += 1
+        self.files += 1
+        self.target = os.path.join(self.dirpath, filename)
+        self.stats = os.lstat(self.target)
+        self.links = self.stats.st_nlink
+        self.size = self.stats.st_size
+        self.total += self.size
 
-            if stat.S_ISLNK(self.stats.st_mode):
-                self.checksum = "symlink" + " "*30
-            else:
-                self.checksum = sha1(self.target)
+        if stat.S_ISLNK(self.stats.st_mode):
+            self.checksum = "symlink" + " "*30
+        else:
+            self.checksum = sha1(self.target)
 
-            self.output()
+        self.output()
 
-            if self.files % self.period == 0:
-                self.now = time.time()
-                self.increment = self.now - self.last
-                self.last = self.now
-                self.elapsed = self.now - self.start
-                print >>sys.stderr, self
+        if self.files % self.period == 0:
+            self.update()
 
     def output(self):
-            print "%s\t%s\t%-12s\t%s" % \
+        print "%s\t%s\t%-12s\t%s" % \
                 (self.links, self.checksum, self.size, self.target)
 
     def close(self):
-        print >> sys.stderr, self
+        self.update()
 
     def __str__(self):
         return "%s directories with %s files (%s bytes) parsed after %.2f seconds (+%.2f)" % \
@@ -102,7 +105,10 @@ def main(directories):
                 dirnames.sort()
                 state.enter(dirpath)
                 for filename in filenames:
-                    state.check(filename)
+                    try:
+                        state.check(filename)
+                    except Exception, e:
+                        print >>sys.stderr, e
     except KeyboardInterrupt:
         print >>sys.stderr, "Cancelled"
     finally:
